@@ -110,6 +110,7 @@ typedef unsigned __int64 uint64_t;
 #define TPL_TYPE_INT16  10
 #define TPL_TYPE_UINT16 11
 #define TPL_TYPE_POUND  12
+#define TPL_TYPE_FLOAT  13
 
 /* error codes */
 #define ERR_NOT_MINSIZE        (-1)
@@ -247,6 +248,7 @@ static const struct tpl_type_t tpl_types[] = {
     /* [TPL_TYPE_INT16] =  */  {'j', sizeof(int16_t)},
     /* [TPL_TYPE_UINT16] = */  {'v', sizeof(uint16_t)},
     /* [TPL_TYPE_POUND] =  */  {'#', 0},
+    /* [TPL_TYPE_FLOAT] =  */  {'F', sizeof(float)},
 };
 
 /* default error-reporting function. Just writes to stderr. */
@@ -356,6 +358,7 @@ TPL_API tpl_node *tpl_map_va(char *fmt, va_list ap) {
             case 'I':
             case 'U':
             case 'f':
+            case 'F':
                 if      (*c=='c') t=TPL_TYPE_BYTE;
                 else if (*c=='i') t=TPL_TYPE_INT32;
                 else if (*c=='u') t=TPL_TYPE_UINT32;
@@ -364,7 +367,8 @@ TPL_API tpl_node *tpl_map_va(char *fmt, va_list ap) {
                 else if (*c=='I') t=TPL_TYPE_INT64;
                 else if (*c=='U') t=TPL_TYPE_UINT64;
                 else if (*c=='f') t=TPL_TYPE_DOUBLE;
-
+                else if (*c=='F') t=TPL_TYPE_FLOAT;
+                
                 if (expect_lparen) goto fail;
                 n = tpl_node_new(parent);
                 n->type = t;
@@ -417,7 +421,8 @@ TPL_API tpl_node *tpl_map_va(char *fmt, va_list ap) {
                         t == TPL_TYPE_UINT32 || t == TPL_TYPE_DOUBLE ||
                         t == TPL_TYPE_UINT64 || t == TPL_TYPE_INT64 || 
                         t == TPL_TYPE_UINT16 || t == TPL_TYPE_INT16 || 
-                        t == TPL_TYPE_STR )) goto fail;
+                        t == TPL_TYPE_STR    || t == TPL_TYPE_FLOAT))
+                          goto fail;
                 }
                 /* count up how many contiguous # and form their product */
                 pound_prod=1;
@@ -629,6 +634,7 @@ static void tpl_free_keep_map(tpl_node *r) {
                 case TPL_TYPE_INT16:
                 case TPL_TYPE_UINT16:
                 case TPL_TYPE_POUND:
+                case TPL_TYPE_FLOAT:
                     find_next_node=1;
                     break;
                 case TPL_TYPE_ARY:
@@ -726,6 +732,7 @@ TPL_API void tpl_free(tpl_node *r) {
                 case TPL_TYPE_INT16:
                 case TPL_TYPE_UINT16:
                 case TPL_TYPE_POUND:
+                case TPL_TYPE_FLOAT:
                     tpl_hook.free(c->data);
                     find_next_node=1;
                     break;
@@ -857,6 +864,7 @@ static void *tpl_dump_atyp(tpl_node *n, tpl_atyp* at, void *dv) {
                 case TPL_TYPE_UINT64:
                 case TPL_TYPE_INT16:
                 case TPL_TYPE_UINT16:
+                case TPL_TYPE_FLOAT:
                     dv = tpl_cpv(dv,datav,tpl_types[c->type].sz * c->num);
                     datav = (void*)((uintptr_t)datav + tpl_types[c->type].sz * c->num);
                     break;
@@ -930,6 +938,7 @@ static size_t tpl_ser_osz(tpl_node *n) {
             case TPL_TYPE_UINT64:
             case TPL_TYPE_INT16:
             case TPL_TYPE_UINT16:
+            case TPL_TYPE_FLOAT:
                 sz += tpl_types[c->type].sz * c->num;
                 break;
             case TPL_TYPE_BIN:
@@ -1100,6 +1109,7 @@ static int tpl_dump_to_mem(tpl_node *r,void *addr,size_t sz) {
             case TPL_TYPE_UINT64:
             case TPL_TYPE_INT16:
             case TPL_TYPE_UINT16:
+            case TPL_TYPE_FLOAT:
                 dv = tpl_cpv(dv,c->data,tpl_types[c->type].sz * c->num);
                 break;
             case TPL_TYPE_BIN:
@@ -1581,6 +1591,7 @@ static void tpl_free_atyp(tpl_node *n, tpl_atyp *atyp) {
                 case TPL_TYPE_UINT64:
                 case TPL_TYPE_INT16:
                 case TPL_TYPE_UINT16:
+                case TPL_TYPE_FLOAT:
                     dv = (void*)((uintptr_t)dv + tpl_types[c->type].sz*c->num);
                     break;
                 case TPL_TYPE_BIN:
@@ -1659,6 +1670,7 @@ static int tpl_serlen(tpl_node *r, tpl_node *n, void *dv, size_t *serlen) {
                 case TPL_TYPE_UINT64:
                 case TPL_TYPE_INT16:
                 case TPL_TYPE_UINT16:
+                case TPL_TYPE_FLOAT:
                     for(fidx=0; fidx < c->num; fidx++) {  /* octothorpe support */
                         if ((uintptr_t)dv + tpl_types[c->type].sz > buf_past) return -1;
                         dv = (void*)((uintptr_t)dv + tpl_types[c->type].sz);
@@ -1811,6 +1823,7 @@ TPL_API int tpl_pack(tpl_node *r, int i) {
             case TPL_TYPE_UINT64:
             case TPL_TYPE_INT16:
             case TPL_TYPE_UINT16:
+            case TPL_TYPE_FLOAT:
                 /* no need to use fidx iteration here; we can copy multiple values in one memcpy */
                 memcpy(child->data,child->addr,tpl_types[child->type].sz * child->num);
                 if (datav) datav = tpl_cpv(datav,child->data,tpl_types[child->type].sz * child->num);
@@ -1989,6 +2002,7 @@ TPL_API int tpl_unpack(tpl_node *r, int i) {
             case TPL_TYPE_UINT64:
             case TPL_TYPE_INT16:
             case TPL_TYPE_UINT16:
+            case TPL_TYPE_FLOAT:
                 /* unpack elements of cross-endian octothorpic array individually */
                 if (((tpl_root_data*)(r->data))->flags & TPL_XENDIAN) {
                     for(fidx=0; fidx < c->num; fidx++) {
@@ -2101,6 +2115,7 @@ static int tpl_unpackA0(tpl_node *r) {
             case TPL_TYPE_UINT64:
             case TPL_TYPE_INT16:
             case TPL_TYPE_UINT16:
+            case TPL_TYPE_FLOAT:
                 for(fidx=0;fidx < c->num; fidx++) {
                     dv = (void*)((uintptr_t)dv + tpl_types[c->type].sz);
                 }
